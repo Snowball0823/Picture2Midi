@@ -3,6 +3,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include "include/MidiFile.h"
 #include <iostream>
 #include <stdlib.h>
 #include <stdio.h>
@@ -25,10 +26,11 @@ void rgb_to_hsv(Vec3b *p);
 uchar channelSelect(uchar a,uchar b,uchar c,string args);
 void get_newdata(Vec3b *oldData, int cols, int *newData);
 void get_newdata(Vec3b *oldData, int cols, int *newData, int padding_cols);
-void get_tonguevalue(vector<vector<double>> *tongueData, int rows, vector<vector<int>> *hueData, int maxHue, int minHue);
-void get_speedvalue(vector<vector<double>> *speedData, int rows, vector<vector<int>> *diffData, int maxDiff, int minDiff);
-void get_svalue(vector<vector<double>> *speedAll, int *s);
+void get_tonguevalue(vector<vector<int>> *tongueData, int rows, vector<vector<int>> *hueData, int maxHue, int minHue);
+void get_speedvalue(vector<vector<int>> *speedData, int rows, vector<vector<int>> *diffData, int maxDiff, int minDiff);
+void get_svalue(vector<vector<int>> *speedAll, int *s);
 bool find_element(vector<SD> *SDsequence, double diffSpeed, double *flagSpeed);
+//void write_midifile();
 
 int main(int argc, char const* const* argv) {
     int midi_cols,padding_cols,minHue=360,maxHue=0,minDiff=360,maxDiff=0;
@@ -43,14 +45,14 @@ int main(int argc, char const* const* argv) {
     vector<vector<int>>new_data(origin_image.rows);
     vector<vector<int>>hue_cols(MIDICHANNEL);
     vector<vector<int>>piexl_diff(MIDICHANNEL);
-    vector<vector<double>>tongueAll(origin_image.rows);
-    vector<vector<double>>speedAll(origin_image.rows-1);
+    vector<vector<int>>tongueAll(origin_image.rows);
+    vector<vector<int>>speedAll(origin_image.rows-1);
     if(origin_image.data!=NULL){
     	cout << "rows:" << origin_image.rows << ",cols:" << origin_image.cols << endl;
 	midi_cols = origin_image.cols/MIDICHANNEL + 1;
 	padding_cols = midi_cols*MIDICHANNEL-origin_image.cols;
 	cout << "pad cols:" << padding_cols << ",midi cols:" << midi_cols << endl;
-	cout << "Hue values:" << endl;
+	//cout << "Hue values:" << endl;
 	for(int i=0; i<origin_image.rows;i++){
 	    new_data[i].resize(MIDICHANNEL);
 	    tongueAll[i].resize(MIDICHANNEL);
@@ -65,7 +67,6 @@ int main(int argc, char const* const* argv) {
 		    if(piexl_diff[j/midi_cols-1].size() == 0)
 		      piexl_diff[j/midi_cols-1].resize(origin_image.rows-1);
 		    //cout<<"hue_cols:"<<hue_cols[j].size()<<endl;
-		    //hue_cols[j].resize(origin_image.rows);
 		    get_newdata(tmp_data, j, &(new_data[i][j/midi_cols-1]));
 		    hue_cols[j/midi_cols-1][i] = new_data[i][j/midi_cols-1];
 		    if(i>0){ 
@@ -90,11 +91,11 @@ int main(int argc, char const* const* argv) {
 	    }
 	    if(new_data[i][MIDICHANNEL-1] < minHue) minHue = new_data[i][MIDICHANNEL-1];
 	    if(new_data[i][MIDICHANNEL-1] > maxHue) maxHue = new_data[i][MIDICHANNEL-1];
-	    cout << "Line " << i << ":" << endl;
+	    /*cout << "Line " << i << ":" << endl;
 	    for(int j=0; j<MIDICHANNEL;j++){
 		cout << new_data[i][j] <<" ";
 	    }
-	    cout << endl;
+	    cout << endl;*/
 	}
 	//cout<<"maxHue:"<<maxHue<<" minHue:"<<minHue<<endl;
     }else{
@@ -102,16 +103,17 @@ int main(int argc, char const* const* argv) {
     }
     //get the tongue
     get_tonguevalue(&tongueAll, origin_image.rows, &new_data, maxHue, minHue);
-    cout << "Diff hue values:" << endl;
-    for(int i=0; i<piexl_diff.size(); i++)
+    get_speedvalue(&speedAll, origin_image.rows, &piexl_diff, maxDiff, minDiff);
+    get_svalue(&speedAll, &S);
+    cout << "Tongue values:" << endl;
+    for(int i=0; i<tongueAll.size(); i++)
     {
 	cout << "line " << i+1 << ":" << endl;
-	for(int j=0; j<piexl_diff[i].size(); j++)
-	  cout << piexl_diff[i][j] << " ";
+	for(int j=0; j<tongueAll[i].size(); j++)
+	  cout << tongueAll[i][j] << " ";
 	cout << endl;
     }
     cout << "maxDiff: " << maxDiff << " minDiff: " << minDiff << endl;
-    get_speedvalue(&speedAll, origin_image.rows, &piexl_diff, maxDiff, minDiff);
     cout << "Speed values:" << endl;
     for(int i=0; i<speedAll.size(); i++)
     {
@@ -120,7 +122,7 @@ int main(int argc, char const* const* argv) {
 	  cout << speedAll[i][j] << " ";
 	cout << endl;
     }
-    get_svalue(&speedAll, &S);
+    cout << "S: " << S << endl;
     return 0;
 }
 
@@ -208,7 +210,7 @@ void get_newdata(Vec3b *oldData, int cols, int *newData, int padding_cols)
     (*newData) = (int)H;
 }
 
-void get_tonguevalue(vector<vector<double>> *tongueData, int rows, vector<vector<int>> *hueData, int maxHue, int minHue)
+void get_tonguevalue(vector<vector<int>> *tongueData, int rows, vector<vector<int>> *hueData, int maxHue, int minHue)
 {
     //cout << "Tongue values:" << endl;
     int tongueLabel=-1;
@@ -219,7 +221,7 @@ void get_tonguevalue(vector<vector<double>> *tongueData, int rows, vector<vector
 	//cout << "Line " << i << ":" << endl;
 	for(int j=0; j<MIDICHANNEL; j++){
 	    if(tongueLabel == -1){
-		(*tongueData)[i][j] = (double)((*hueData)[i][j]-minHue)*87/(double)(maxHue-minHue);
+		(*tongueData)[i][j] = (int)((double)((*hueData)[i][j]-minHue)*87/(double)(maxHue-minHue)+0.5);
 	    }else{
 		(*tongueData)[i][j] = 0;
 	    }
@@ -229,7 +231,7 @@ void get_tonguevalue(vector<vector<double>> *tongueData, int rows, vector<vector
 	}
 }
 
-void get_speedvalue(vector<vector<double>> *speedData, int rows, vector<vector<int>> *diffData, int maxDiff, int minDiff)
+void get_speedvalue(vector<vector<int>> *speedData, int rows, vector<vector<int>> *diffData, int maxDiff, int minDiff)
 {
     //cout << "Speed values:" << endl;
     int diffLabel=-1;
@@ -240,7 +242,7 @@ void get_speedvalue(vector<vector<double>> *speedData, int rows, vector<vector<i
 	//cout << "Line " << i << ":" << endl;
 	for(int j=0; j<MIDICHANNEL; j++){
 	    if(diffLabel == -1){
-		(*speedData)[i][j] = (double)((*diffData)[j][i]-minDiff)*10/(double)(maxDiff-minDiff);
+		(*speedData)[i][j] = (int)((double)((*diffData)[j][i]-minDiff)*10/(double)(maxDiff-minDiff)+0.5);
 	    }else{
 		(*speedData)[i][j] = 0;
 	    }
@@ -250,7 +252,7 @@ void get_speedvalue(vector<vector<double>> *speedData, int rows, vector<vector<i
 	}
 }
 
-void get_svalue(vector<vector<double>> *speedAll, int *s)
+void get_svalue(vector<vector<int>> *speedAll, int *s)
 {
     double maxSpeedDiff=0, minSpeedDiff=10, flagSpeedDiff, sTmp;
     SD diffTmp; 
@@ -272,9 +274,6 @@ void get_svalue(vector<vector<double>> *speedAll, int *s)
 	}
     }
     (*s) = (int)((flagSpeedDiff-minSpeedDiff)*80/(maxSpeedDiff-minSpeedDiff)+120);
-    cout << "maxSD: " << maxSpeedDiff << " minSD: " << minSpeedDiff << endl;
-    cout << "flagSD: " << flagSpeedDiff << endl;
-    cout << "S: " << (*s) << endl;
 }
 
 bool find_element(vector<SD> *SDsequence, double diffSpeed, double *flagSpeed)
