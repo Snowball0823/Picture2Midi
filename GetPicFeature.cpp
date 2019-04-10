@@ -3,17 +3,20 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#include "include/MidiFile.h"
+#include "MidiWrite.h"
 #include <iostream>
-#include <stdlib.h>
-#include <stdio.h>
+#include <fstream>
+#include <cstdlib>
+#include <cstdio>
 #include <algorithm>
 #include <vector>
 #include <cmath>
+#include <cstring>
 #define MIDICHANNEL 14
 
 using namespace cv;
 using namespace std;
+using namespace smf;
 
 typedef unsigned char uchar;
 typedef struct SpeedDiff
@@ -35,11 +38,21 @@ bool find_element(vector<SD> *SDsequence, double diffSpeed, double *flagSpeed);
 int main(int argc, char const* const* argv) {
     int midi_cols,padding_cols,minHue=360,maxHue=0,minDiff=360,maxDiff=0;
     int S;
+    //char *fileName,*ext;
+    //string midiFilename;
+    MidiFile midiFile;
     //int tongueNull=-1;
     string file_path;
     cout << "Plese enter the file path\n";
     cin >> file_path;
     file_path.erase(file_path.find_last_not_of(" ") + 1);
+    //_splitpath(&file_path,NULL,NULL,fileName,ext);
+    int namePos = file_path.find_last_of('/');
+    int extPos = file_path.find_last_of('.');
+    int nameLength = extPos - namePos - 1; 
+    cout << "namePos:" << namePos << " extPos:" << extPos << " nameLength:" << nameLength << endl;
+    string midiFilename(file_path.substr(namePos+1,nameLength));
+    cout << "Midi File Name:" << midiFilename << endl;
     Mat origin_image,image_grey;
     origin_image = imread(file_path, IMREAD_COLOR);
     vector<vector<int>>new_data(origin_image.rows);
@@ -100,12 +113,13 @@ int main(int argc, char const* const* argv) {
 	//cout<<"maxHue:"<<maxHue<<" minHue:"<<minHue<<endl;
     }else{
 	cout << "path wrong!" << endl;
+	return 1;
     }
     //get the tongue
     get_tonguevalue(&tongueAll, origin_image.rows, &new_data, maxHue, minHue);
     get_speedvalue(&speedAll, origin_image.rows, &piexl_diff, maxDiff, minDiff);
     get_svalue(&speedAll, &S);
-    cout << "Tongue values:" << endl;
+    /*cout << "Tongue values:" << endl;
     for(int i=0; i<tongueAll.size(); i++)
     {
 	cout << "line " << i+1 << ":" << endl;
@@ -122,7 +136,10 @@ int main(int argc, char const* const* argv) {
 	  cout << speedAll[i][j] << " ";
 	cout << endl;
     }
-    cout << "S: " << S << endl;
+    cout << "S: " << S << endl;*/
+    set_midioptions(S, 1, MIDICHANNEL, 40, &midiFile);
+    creat_midifile(&tongueAll, &speedAll, &midiFile, MIDICHANNEL, 1, 4, S);
+    write_midifile(midiFilename, &midiFile);
     return 0;
 }
 
