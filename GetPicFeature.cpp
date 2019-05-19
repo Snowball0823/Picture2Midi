@@ -4,6 +4,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include "MidiWrite.h"
+#include "WavCreater.h"
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
@@ -33,27 +34,89 @@ void get_tonguevalue(vector<vector<int>> *tongueData, int rows, vector<vector<in
 void get_speedvalue(vector<vector<int>> *speedData, int rows, vector<vector<int>> *diffData, int maxDiff, int minDiff);
 void get_svalue(vector<vector<int>> *speedAll, int *s);
 bool find_element(vector<SD> *SDsequence, double diffSpeed, double *flagSpeed);
-//void write_midifile();
+void make_midifile(string file_path);
+void make_wavefile(string file_path);
 
 int main(int argc, char const* const* argv) {
-    int midi_cols,padding_cols,minHue=360,maxHue=0,minDiff=360,maxDiff=0;
-    int S;
-    //char *fileName,*ext;
-    //string midiFilename;
-    MidiFile midiFile;
     //int tongueNull=-1;
     string file_path;
     cout << "Plese enter the file path\n";
     cin >> file_path;
     file_path.erase(file_path.find_last_not_of(" ") + 1);
     //_splitpath(&file_path,NULL,NULL,fileName,ext);
+    make_midifile(file_path);
+    make_wavefile(file_path);
+    return 0;
+}
+
+void make_wavefile(string file_path)
+{
     int namePos = file_path.find_last_of('/');
     int extPos = file_path.find_last_of('.');
-    int nameLength = extPos - namePos - 1; 
+    int nameLength = extPos - namePos - 1;
+    cout << "namePos:" << namePos << " extPos:" << extPos << " nameLength:" << nameLength << endl;
+    string waveFilename(file_path.substr(namePos+1,nameLength));
+    waveFilename = waveFilename + ".wav";
+    cout << "Wave File Name:" << waveFilename << endl;
+    int samplefreq=2000;
+    int channels=2;
+    int channelbits=8;
+    float perduration=0.005;
+    Mat image_grey;
+    image_grey = imread(file_path, IMREAD_COLOR);
+    cvtColor(image_grey, image_grey, COLOR_BGR2GRAY);
+    if(image_grey.data!=NULL)
+    {
+	int musicNum = image_grey.cols;
+	int duration = musicNum*perduration;
+	cout<<"duration:"<<duration<<endl;
+	DWORD totalLen = (samplefreq * channels * channelbits / 8) * duration + 44;
+    	char *allBuffer=new char[totalLen];
+	CreateHead(duration,samplefreq,channels,channelbits,allBuffer);
+	char *bufferTmp;
+	bufferTmp=allBuffer+WAVE_HEAD_LENGTH;
+	int flag=0;
+	int point_len=samplefreq*perduration;
+	for(int i=0;i<musicNum;i++)
+	{
+	    for(int j=0;j<point_len;j++)
+	    {
+		float result_tmp_L=0,result_tmp_R=0;
+		for(int k=0;k<image_grey.rows;k++)
+		{
+		    uchar *tmp_data = image_grey.ptr<uchar>(k);
+		    result_tmp_L+=sin(j * (MATH_PI * 2) / samplefreq * k) * tmp_data[i];
+		    result_tmp_R+=sin((j+5) * (MATH_PI * 2) / samplefreq * k) * tmp_data[i];
+		}
+		*(bufferTmp+flag)=result_tmp_L;
+		*(bufferTmp+flag+1)=result_tmp_R;
+		flag+=2;
+		//cout<<"result:"<<result_tmp<<endl;
+	    }
+	}
+	WriteWavFile(waveFilename,allBuffer,totalLen);
+	cout<<"Wave file saved!"<<endl;
+    }
+    else{
+	cout << "path wrong!" << endl;
+	return;
+    }
+}
+
+void make_midifile(string file_path)
+{
+    int midi_cols,padding_cols,minHue=360,maxHue=0,minDiff=360,maxDiff=0;
+    int S;
+    //char *fileName,*ext;
+    //string midiFilename;
+    MidiFile midiFile;
+    int namePos = file_path.find_last_of('/');
+    int extPos = file_path.find_last_of('.');
+    int nameLength = extPos - namePos - 1;
     cout << "namePos:" << namePos << " extPos:" << extPos << " nameLength:" << nameLength << endl;
     string midiFilename(file_path.substr(namePos+1,nameLength));
     cout << "Midi File Name:" << midiFilename << endl;
-    Mat origin_image,image_grey;
+    Mat origin_image;
     origin_image = imread(file_path, IMREAD_COLOR);
     vector<vector<int>>new_data(origin_image.rows);
     vector<vector<int>>hue_cols(MIDICHANNEL);
@@ -82,7 +145,7 @@ int main(int argc, char const* const* argv) {
 		    //cout<<"hue_cols:"<<hue_cols[j].size()<<endl;
 		    get_newdata(tmp_data, j, &(new_data[i][j/midi_cols-1]));
 		    hue_cols[j/midi_cols-1][i] = new_data[i][j/midi_cols-1];
-		    if(i>0){ 
+		    if(i>0){
 			piexl_diff[j/midi_cols-1][i-1] = abs(hue_cols[j/midi_cols-1][i] - hue_cols[j/midi_cols-1][i-1]);
 			if(piexl_diff[j/midi_cols-1][i-1] < minDiff) minDiff = piexl_diff[j/midi_cols-1][i-1];
 			if(piexl_diff[j/midi_cols-1][i-1] > maxDiff) maxDiff = piexl_diff[j/midi_cols-1][i-1];
@@ -113,7 +176,7 @@ int main(int argc, char const* const* argv) {
 	//cout<<"maxHue:"<<maxHue<<" minHue:"<<minHue<<endl;
     }else{
 	cout << "path wrong!" << endl;
-	return 1;
+	return;
     }
     //get the tongue
     get_tonguevalue(&tongueAll, origin_image.rows, &new_data, maxHue, minHue);
@@ -140,7 +203,7 @@ int main(int argc, char const* const* argv) {
     set_midioptions(S, 1, MIDICHANNEL, 40, &midiFile);
     creat_midifile(&tongueAll, &speedAll, &midiFile, MIDICHANNEL, 1, 4, S);
     write_midifile(midiFilename, &midiFile);
-    return 0;
+    cout<<"Midi file saved!"<<endl;
 }
 
 void rgb_to_hsv(Vec3b *p)
